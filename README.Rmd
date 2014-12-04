@@ -39,4 +39,5 @@ bp.ns <- rrset("beechplane.com", rrtype="NS", bailiwick="com.")
 ns10 <- rdata("ns5.value-domain.com", type="name", limit=10)
 ```
 
+This package is derived from earlier work by [hrbmstr](https://github.com/hrbrmstr).
 
