@@ -25,6 +25,7 @@ readConfig <- function(configFilePath) {
 #' Internal function to load an INI file
 #' 
 #' via http://r.789695.n4.nabble.com/Read-Windows-like-INI-files-into-R-data-structure-td827353.html
+#' @param INI.filename the filename of the ini file.
 Parse.INI <- function(INI.filename) {
   
   connection <- file(INI.filename)
@@ -90,7 +91,7 @@ farsight_pat <- function(val=NULL, force=FALSE) {
 #' first seen record.  Keep an eye out because some of the return values in the columns may 
 #' be lists and not easy vectors, specifically the \code{rdata} column.
 #' 
-#' @seealso \link{https://api.dnsdb.info/}
+#' @seealso \url{https://api.dnsdb.info/}
 #' 
 #' @param name the domain being searched, may contain wildcard "*" symbol
 #' @param rrtype optional filter of DNS RRtype field
@@ -100,8 +101,17 @@ farsight_pat <- function(val=NULL, force=FALSE) {
 #' will try to pull what was loaded from \link{readConfig}, and if that doesn't work 
 #' and the session is interactive, it will prompt for the API key.
 #' @export
-#' @import httr, jsonlite
+#' @import httr
+#' @import jsonlite
+#' @examples
+#' # get everything for a simple domain
+#' bp <- rrset("beechplane.com")
 #' 
+#' # just get the SOA record for it
+#' bp <- rrset("beechplane.com", rrtype="SOA")
+#' 
+#' # get just the name servers from the top level com domain
+#' bp <- rrset("beechplane.com", rrtype="NS", bailiwick="com.")
 rrset <- function(name, rrtype=NULL, bailiwick=NULL, limit=NULL, pat=NULL) {
   pat <- farsight_pat(pat)
   query <- paste("https://api.dnsdb.info/lookup/rrset/name", name, sep="/")
@@ -126,21 +136,77 @@ rrset <- function(name, rrtype=NULL, bailiwick=NULL, limit=NULL, pat=NULL) {
   rez
 }
 
+#' Perform an "inverse" lookup based on RData records.
+#' 
+#' Looks up the Rdata index given a type and name and it can optionally filter based on the 
+#' RRType or the bailiwick scope.
+#' 
+#' This will attempt to convert the date/time fields to POSIXct objects and if those are 
+#' found, it will attempt to calculate the difference (in days) between the last seen and 
+#' first seen record.  Keep an eye out because some of the return values in the columns may 
+#' be lists and not easy vectors, specifically the \code{rdata} column.
+#' 
+#' @seealso \url{https://api.dnsdb.info/}
+#' 
+#' @param value depending on the type, this is the object to query for.
+#' @param type either "ip" or "name"
+#' @param rrtype optional filter of DNS RRtype field
+#' @param limit the maximum number of values to return
+#' @param pat the DNSDB API key (if supplied manually) to use, otherwise this 
+#' will try to pull what was loaded from \link{readConfig}, and if that doesn't work 
+#' and the session is interactive, it will prompt for the API key.
+#' @export
+#' @import httr
+#' @import jsonlite
+#' @examples
+#' # pull names that resolved to an IP
+#' bp <- rdata("113.10.174.118")
+#' 
+#' # look at 10 most recent rrnames at a given name server
+#' bp <- rdata("ns5.value-domain.com", type="name", limit=10)
+rdata <- function(value, type="ip", rrtype=NULL, limit=NULL, pat=NULL) {
+  pat <- farsight_pat(pat)
+  query <- paste("https://api.dnsdb.info/lookup/rdata", type, value, sep="/")
+  if (!is.null(rrtype)) query <- paste(query, rrtype, sep="/")
+  if (!is.null(limit) && is.numeric(limit)) {
+    query <- paste(query, limit, sep="?limit=")
+  }
+  req <- GET(query,
+             add_headers(`Content-type`="application/json",
+                         `Accept`="application/json",
+                         `X-Api-Key`=pat))
+  rez <- getresult(req)
+  if (is.numeric(rez)) {
+    warning(paste0("rdata: ", rez, " status returned for ", name, "."))
+    return()
+  }
+  rez
+}
+
+
 #' Internal function: given a request for data, returns a data frame of the results
+#' @param req the httr GET request
+#' @import httr
+#' @import jsonlite
 getresult <- function(req) {
   if(req$status_code >= 400) {
     return(req$status_code)
   }
   tmp.lines <- readLines(textConnection(content(req, type="text")))
   tmp.df <- fromJSON(sprintf("[%s]", paste(tmp.lines[tmp.lines != ""], sep="", collapse=",")))
-  tmp.df$time_first <- as.POSIXct(tmp.df$time_first, origin="1970-01-01")
-  tmp.df$time_last <- as.POSIXct(tmp.df$time_last, origin="1970-01-01")
+  if ("time_first" %in% colnames(tmp.df)) tmp.df$time_first <- as.POSIXct(tmp.df$time_first, origin="1970-01-01")
+  if ("time_last" %in% colnames(tmp.df)) tmp.df$time_last <- as.POSIXct(tmp.df$time_last, origin="1970-01-01")
   if ("zone_time_first" %in% colnames(tmp.df)) tmp.df$zone_time_first <- as.POSIXct(tmp.df$zone_time_first, origin="1970-01-01")
   if ("zone_time_last" %in% colnames(tmp.df)) tmp.df$zone_time_last <- as.POSIXct(tmp.df$zone_time_last, origin="1970-01-01")
-  tmp.df <- with(tmp.df, tmp.df[rev(order(time_last)),])
+  if ("time_last" %in% colnames(tmp.df)) 
+    tmp.df <- with(tmp.df, tmp.df[rev(order(time_last)),])
+  else if ("zone_time_last" %in% colnames(tmp.df))
+    tmp.df <- with(tmp.df, tmp.df[rev(order(zone_time_last)),])
   rownames(tmp.df) <- NULL
-  tmp.df$diffdays <- as.numeric(difftime(tmp.df$time_last, tmp.df$time_first, units="days"))
-  tmp.df$diffdays[is.na(tmp.df$time_first)] <- NA
+  if ("time_first" %in% colnames(tmp.df)) {
+    tmp.df$diffdays <- as.numeric(difftime(tmp.df$time_last, tmp.df$time_first, units="days"))
+    tmp.df$diffdays[is.na(tmp.df$time_first)] <- NA
+  }
   if ("zone_time_first" %in% colnames(tmp.df)) {
     tmp.df$zone_diffdays <- as.numeric(difftime(tmp.df$zone_time_last, tmp.df$zone_time_first, units="days"))
     tmp.df$zone_diffdays[is.na(tmp.df$zone_time_first)] <- NA

@@ -1,9 +1,14 @@
 Package: farsight
 Type: Package
-Title: What the package does (short line)
+Title: API wrapper around Farsight's DNSDB API
 Version: 1.0
 Date: 2014-12-04
-Author: Who wrote it
-Maintainer: Who to complain to <yourfault@somewhere.net>
-Description: More about what it does (maybe more than one line)
-License: What license is it under?
+Author: Jay Jacobs <jay.jacobs@verizon.com>, Bob Rudis <bob.rudis@verizon.com>
+Maintainer: Jay Jacobs <jay.jacobs@verizon.com>
+Description: Wraps the two API calls availabel from Farsight's DNSDB API and
+    returns R objects.
+License: GPL-2
+Depends:
+    R (>= 3.0.0)
+Imports:
+    jsonlite,httr
