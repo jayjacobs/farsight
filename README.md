@@ -29,3 +29,5 @@ bp.ns <- rrset("beechplane.com", rrtype="NS", bailiwick="com.")
 # look at 10 most recent rrnames at a given name server
 ns10 <- rdata("ns5.value-domain.com", type="name", limit=10)
 ```
+
+This package is derived from earlier work by [hrbmstr](https://github.com/hrbrmstr).
